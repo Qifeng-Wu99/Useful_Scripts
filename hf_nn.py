@@ -36,7 +36,7 @@ def get_download_links_from_url(root):
     dl_base = "https://huggingface.co"
     url = f"{base}/{root}"
     dl = to_dl(root)
-
+    print("dl: ", dl)
     cursor = None
 
     links = []
@@ -65,7 +65,7 @@ def get_download_links_from_url(root):
         
         links.append(f"{dl_base}/{dl}/{fname}")
       
-
+    print("URL: ", links)
     return links
     
 
