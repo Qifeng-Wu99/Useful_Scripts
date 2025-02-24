@@ -34,7 +34,7 @@ def download_from_google_drive(url, output_path):
 def main():
     parser = argparse.ArgumentParser(description="Download a file or folder from Google Drive and specify the target directory.")
     parser.add_argument("url", help="Google Drive shared URL")
-    parser.add_argument("output", default='/data/ds', help="Path to the target directory and file name or folder")
+    parser.add_argument("--output", help="Path to the target directory and file name or folder")
 
     args = parser.parse_args()
 

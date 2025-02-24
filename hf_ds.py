@@ -26,10 +26,27 @@ def to_dl(root):
     parts = root.split('/')
 
     #parts.insert(2, 'resolve')
-    parts[2] = 'resolve'
-    parts = parts[:-1]
+    if parts[-1] != 'main':
+        parts[2] = 'resolve'
+        parts = parts[:-1]
+    else:
+        parts[2] = 'resolve'
+        
+
     dl = '/'.join(parts)
     return dl
+
+# def to_dl(root):
+#     parts = root.split('/')
+    
+#     if len(parts) >= 3:  # Ensure there are at least 3 parts
+#         parts[2] = 'resolve'
+#         parts = parts[:-1]
+#     else:
+#         return root  # Return the original root if it's too short
+    
+#     dl = '/'.join(parts)
+#     return dl
                 
 def get_download_links_from_url(root):
     base = "https://huggingface.co/api/datasets"
@@ -67,6 +84,9 @@ def get_download_links_from_url(root):
       
 
     return links
+
+
+
     
 
 
@@ -83,6 +103,8 @@ if __name__ == '__main__':
         os.makedirs(args.output, exist_ok=True)
 
     links = get_download_links_from_url(root) #get_download_links_from_url(url)
+    print(links)
+    exit()
     for l in links:
         download_file_with_wget(l, args.output)
 
