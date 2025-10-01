@@ -31,7 +31,7 @@ def to_dl(root):
         parts = parts[:-1]
     else:
         parts[2] = 'resolve'
-        
+
 
     dl = '/'.join(parts)
     return dl
@@ -104,7 +104,7 @@ if __name__ == '__main__':
 
     links = get_download_links_from_url(root) #get_download_links_from_url(url)
     print(links)
-    exit()
+    #exit()
     for l in links:
         download_file_with_wget(l, args.output)
 

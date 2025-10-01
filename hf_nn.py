@@ -18,6 +18,7 @@ parser = argparse.ArgumentParser()
 parser = argparse.ArgumentParser()
 parser.add_argument('-l', '--root', type=str, help='Root of the file to fetch from')
 parser.add_argument('-d', '--output', type=str, default='./', help='The folder where the files should be saved.')
+parser.add_argument('--file', action="store_true", default= False, help='The file to fetch from')
 args = parser.parse_args()
 
 
@@ -67,6 +68,18 @@ def get_download_links_from_url(root):
       
 
     return links
+
+def get_file_url(root):
+    dl_base = "https://huggingface.co"
+    parts = root.split('/')
+    parts[2] = 'resolve'
+    dl = '/'.join(parts)
+    return [f"{dl_base}/{dl}"]
+
+
+
+
+
     
 
 
@@ -78,8 +91,16 @@ def download_file_with_wget(file_url, download_directory):
 
 if __name__ == '__main__':
     root = args.root
-    links = get_download_links_from_url(root) #get_download_links_from_url(url)
+    if args.file:
+        links = get_file_url(root)
+    else:
+        links = get_download_links_from_url(root) #get_download_links_from_url(url)
+    print(links)
+    #exit()
     for l in links:
         download_file_with_wget(l, args.output)
+
+
+# https://huggingface.co/THUDM/CogVLM/resolve/main/cogvlm-grounding-base.zip
 
 
