@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-This script recursively downloads files from a Hugging Face Models repository,
-preserving the directory structure.
+This script recursively downloads files from a Hugging Face repository
+(`models`, `datasets`, or `spaces`), preserving the directory structure.
 
 Example Usage:
 
-# Download everything from the 'main' branch of stabilityai/stable-diffusion-xl-base-1.0
+# Download everything from the 'main' branch of a model repo
 python hf_downloader_recursive.py \
   -l https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/main \
   -d ./sdxl_base_model
 
-# Download only the 'text_encoder' subfolder
+# Download only the 'text_encoder' subfolder of a model repo
 python hf_downloader_recursive.py \
   -l https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/main/text_encoder \
   -d ./sdxl_text_encoder
 
-# Download a single specific file
+# Download a single specific file from a model repo
 python hf_downloader_recursive.py \
   -l https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/model_index.json \
   -d ./sdxl_metadata
@@ -25,6 +25,11 @@ python hf_downloader_recursive.py \
   -l https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/main/model_index.json \
   -d ./sdxl_metadata \
   --file
+
+# Download recursively from a dataset repo
+python hf_downloader_recursive.py \
+  -l https://huggingface.co/datasets/Jeongeun/omy_pnp_language/tree/main \
+  -d ./omy_pnp_language
 """
 
 import argparse
@@ -91,7 +96,7 @@ def parse_hf_url(url):
         url (str): The Hugging Face URL.
 
     Returns:
-        tuple: (repo_id, ref, path, is_file_url)
+        tuple: (hub_kind, repo_id, ref, path, is_file_url)
                is_file_url is True if the URL uses '/resolve/' or is forced by --file flag.
                Returns None if parsing fails.
     """
@@ -103,51 +108,59 @@ def parse_hf_url(url):
 
         path_parts = parsed.path.strip('/').split('/')
 
+        # Detect hub kind prefix (datasets/spaces/models). Model repos usually omit 'models'.
+        hub_kind = 'models'
+        start_idx = 0
+        if len(path_parts) >= 1 and path_parts[0] in ['datasets', 'spaces', 'models']:
+            hub_kind = 'models' if path_parts[0] == 'models' else path_parts[0]
+            start_idx = 1
+
         # Standard formats:
         # /<user>/<repo>/tree/<ref>/<path...*>
         # /<user>/<repo>/resolve/<ref>/<path...*>
         # /<user>/<repo> (implies tree/main)
 
-        if len(path_parts) < 2:
+        if len(path_parts) - start_idx < 2:
             print(f"Error: URL path '{parsed.path}' is too short. Expected repo ID.")
             return None
 
-        repo_id = f"{path_parts[0]}/{path_parts[1]}"
+        repo_id = f"{path_parts[start_idx]}/{path_parts[start_idx+1]}"
         path_type = 'tree' # Default assumption
         ref = 'main'      # Default assumption
         repo_path = ''
 
-        if len(path_parts) > 2:
-            path_type = path_parts[2]
+        if len(path_parts) > start_idx + 2:
+            path_type = path_parts[start_idx + 2]
             if path_type not in ['tree', 'resolve']:
                 # Assume it's part of the repo path with default ref 'main' and type 'tree'
                 # e.g., /user/repo/some/path -> tree/main/some/path
                 print(f"Warning: URL path segment '{path_type}' is not 'tree' or 'resolve'. Assuming it's part of the path with default branch 'main'.")
                 path_type = 'tree'
                 ref = 'main'
-                repo_path = "/".join(path_parts[2:])
-            elif len(path_parts) > 3:
-                ref = path_parts[3]
-                repo_path = "/".join(path_parts[4:])
+                repo_path = "/".join(path_parts[start_idx + 2:])
+            elif len(path_parts) > start_idx + 3:
+                ref = path_parts[start_idx + 3]
+                repo_path = "/".join(path_parts[start_idx + 4:])
             # else: /user/repo/tree|resolve -> implies ref 'main', path ''
 
         is_file_url = (path_type == 'resolve')
 
-        print(f"Parsed URL: Repo='{repo_id}', Ref='{ref}', Path='{repo_path}', Type='{path_type}'")
-        return repo_id, ref, repo_path, is_file_url
+        print(f"Parsed URL: Hub='{hub_kind}', Repo='{repo_id}', Ref='{ref}', Path='{repo_path}', Type='{path_type}'")
+        return hub_kind, repo_id, ref, repo_path, is_file_url
 
     except Exception as e:
         print(f"Error parsing URL '{url}': {e}")
         return None
 
 
-def get_files_recursive(repo_id, path, ref='main', retries=3, backoff_factor=1.0):
+def get_files_recursive(hub_kind, repo_id, path, ref='main', retries=3, backoff_factor=1.0):
     """
     Recursively fetches file download links and relative paths from a Hugging Face repo path.
     Handles pagination using the cursor from response headers.
     Includes retry logic.
 
     Args:
+        hub_kind (str): One of 'models', 'datasets', or 'spaces'.
         repo_id (str): The repository ID (e.g., 'google/flan-t5-base').
         path (str): The starting path within the repository (can be empty for root).
         ref (str): The branch or commit hash (e.g., 'main').
@@ -162,7 +175,7 @@ def get_files_recursive(repo_id, path, ref='main', retries=3, backoff_factor=1.0
     cursor = None
 
     # Construct the base API URL for the *directory* listing
-    api_list_url_base = f"https://huggingface.co/api/models/{repo_id}/tree/{ref}/{path}".rstrip('/')
+    api_list_url_base = f"https://huggingface.co/api/{hub_kind}/{repo_id}/tree/{ref}/{path}".rstrip('/')
 
     print(f"\n--- Exploring path: '{path if path else '<root>'}' ---")
 
@@ -218,7 +231,8 @@ def get_files_recursive(repo_id, path, ref='main', retries=3, backoff_factor=1.0
                     # If this is the *first* call for this path (no cursor), treat it as a single file.
                     if cursor is None and not files_to_download: # Check if we haven't added anything yet for this path
                         print("Attempting to fetch as a single file.")
-                        file_dl_url = f"https://huggingface.co/{repo_id}/resolve/{ref}/{path}"
+                        web_prefix = '' if hub_kind == 'models' else f"{hub_kind}/"
+                        file_dl_url = f"https://huggingface.co/{web_prefix}{repo_id}/resolve/{ref}/{path}"
                         # Check if this file actually exists before adding
                         try:
                             head_response = requests.head(file_dl_url, timeout=10, allow_redirects=True, headers=headers)
@@ -258,7 +272,8 @@ def get_files_recursive(repo_id, path, ref='main', retries=3, backoff_factor=1.0
 
             if item_type == 'file':
                 # Construct download URL using resolve endpoint
-                file_dl_url = f"https://huggingface.co/{repo_id}/resolve/{ref}/{full_relative_path}"
+                web_prefix = '' if hub_kind == 'models' else f"{hub_kind}/"
+                file_dl_url = f"https://huggingface.co/{web_prefix}{repo_id}/resolve/{ref}/{full_relative_path}"
                 print(f"  [File] Queued: {full_relative_path} (Size: {item_size})")
                 files_to_download.append((file_dl_url, full_relative_path))
             elif item_type == 'directory':
@@ -266,7 +281,7 @@ def get_files_recursive(repo_id, path, ref='main', retries=3, backoff_factor=1.0
                 # Recursively get files from the subdirectory
                 try:
                     # Pass the full relative path to the recursive call
-                    sub_files = get_files_recursive(repo_id, full_relative_path, ref, retries, backoff_factor)
+                    sub_files = get_files_recursive(hub_kind, repo_id, full_relative_path, ref, retries, backoff_factor)
                     if sub_files:
                         files_to_download.extend(sub_files)
                     # No explicit "finished exploring" here, happens at the end of the function call for that path
@@ -398,7 +413,7 @@ if __name__ == '__main__':
     if not parsed_info:
         exit(1) # Error message already printed by parser
 
-    repo_id, ref, initial_path, is_file_url = parsed_info
+    hub_kind, repo_id, ref, initial_path, is_file_url = parsed_info
     force_single_file = args.file
 
     files_to_download = []
@@ -412,7 +427,7 @@ if __name__ == '__main__':
             # Need to check file existence first? get_files_recursive handles this somewhat.
             # Let's try fetching it as if it were a directory containing only itself.
             # This reuses the checking logic within get_files_recursive.
-            files_to_download = get_files_recursive(repo_id, initial_path, ref, args.retries, args.backoff)
+            files_to_download = get_files_recursive(hub_kind, repo_id, initial_path, ref, args.retries, args.backoff)
             if not files_to_download:
                  print(f"Warning: Direct file URL {args.root} could not be verified or fetched.")
 
@@ -421,7 +436,8 @@ if __name__ == '__main__':
         elif force_single_file:
             print("Processing as single file due to --file flag.")
             # Construct the download URL assuming initial_path is the file path
-            file_dl_url = f"https://huggingface.co/{repo_id}/resolve/{ref}/{initial_path}"
+            web_prefix = '' if hub_kind == 'models' else f"{hub_kind}/"
+            file_dl_url = f"https://huggingface.co/{web_prefix}{repo_id}/resolve/{ref}/{initial_path}"
             # We should ideally check if it exists, but let's just add it and let wget handle errors
             print(f"  [File] Queued (forced): {initial_path}")
             files_to_download.append((file_dl_url, initial_path))
@@ -429,7 +445,7 @@ if __name__ == '__main__':
         # Case 3: URL points to a directory (/tree/ or implied)
         else:
             print("URL detected as directory link (/tree/ or root). Fetching recursively...")
-            files_to_download = get_files_recursive(repo_id, initial_path, ref, args.retries, args.backoff)
+            files_to_download = get_files_recursive(hub_kind, repo_id, initial_path, ref, args.retries, args.backoff)
 
     except Exception as e:
         print(f"\nAn unexpected error occurred during file listing: {e}")
